@@ -1,47 +1,45 @@
-import { Client } from "@upstash/workflow";
 import Subscription from "../models/subscriptionSchema.js";
-
-// Token environment variable se lena best practice hai
-const workflowClient = new Client({
-  token:
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySUQiOiI2OTFkOWQwN2U3NjQxMjdkYjgzMTY4OTciLCJpYXQiOjE3NjM1NDg0MjMsImV4cCI6MTc2NDE1MzIyM30.5P8SDuxAMaAF49oqxGJcact2lebMU_7U_XOEoMjTVF0",
-});
+import { workflowClient } from "../config/upstash.js";
 
 export const createSubscription = async (req, res, next) => {
   try {
-    const newSubscription = await Subscription.create({
+    const subscription = await Subscription.create({
       ...req.body,
       user: req.user._id,
     });
 
-    // Workflow ka unique name den aur subscriptionId bhejo
-    await workflowClient.trigger(
-      "http://localhost:5500/api/v1/workflow/subscription/reminder",
-      {
-        subscriptionId: newSubscription._id.toString(),
-      }
-    );
-
-    res.status(201).json({
-      success: true,
-      message: "Subscription created!",
-      data: newSubscription,
+    const { workflowRunId } = await workflowClient.trigger({
+      url: `http://localhost:5500/api/v1/workflows/subscription/reminder`,
+      body: {
+        subscriptionId: subscription.id,
+      },
+      headers: {
+        "content-type": "application/json",
+      },
+      retries: 0,
     });
-  } catch (error) {
-    next(error);
+
+    res
+      .status(201)
+      .json({ success: true, data: { subscription, workflowRunId } });
+  } catch (e) {
+    next(e);
   }
 };
 
 export const getUserSubscriptions = async (req, res, next) => {
   try {
+    // Check if the user is the same as the one in the token
     if (req.user.id !== req.params.id) {
       const error = new Error("You are not the owner of this account");
       error.status = 401;
       throw error;
     }
+
     const subscriptions = await Subscription.find({ user: req.params.id });
+
     res.status(200).json({ success: true, data: subscriptions });
-  } catch (error) {
-    next(error);
+  } catch (e) {
+    next(e);
   }
 };
